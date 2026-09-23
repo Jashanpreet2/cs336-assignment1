@@ -1,5 +1,11 @@
 import os
 from typing import BinaryIO
+import multiprocessing
+import regex as re
+import sys
+import time
+
+SPECIAL_TOKENS = ["<|endoftext|>"]
 
 
 def find_chunk_boundaries(
@@ -47,16 +53,65 @@ def find_chunk_boundaries(
 
     # Make sure all boundaries are unique, but might be fewer than desired_num_chunks
     return sorted(set(chunk_boundaries))
+    
+
+def read_file(filename, start_boundary, end_boundary, count_dict, lk):
+    PAT = "|".join(re.escape(t) for t in sorted(SPECIAL_TOKENS, key=len, reverse=True)) + r"""|'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+    my_count_dict = {}
+    with open(filename, "rb") as f:
+        f.seek(start_boundary)
+        raw_content = f.read(end_boundary-start_boundary).decode("utf-8", errors="ignore")
+
+    for token in re.finditer(PAT, raw_content):
+        byte_val = token.group().encode("utf-8")
+        if byte_val not in my_count_dict:
+            my_count_dict[byte_val] = 0
+        my_count_dict[byte_val] += 1
+    with lk:
+        for token in my_count_dict:
+            if token not in count_dict:
+                count_dict[token] = 0
+            count_dict[token] += my_count_dict[token]
 
 
 ## Usage
-with open(..., "rb") as f:
+filename = "data/TinyStoriesV2-GPT4-valid.txt"
+with open(filename, "rb") as f:
     num_processes = 4
     boundaries = find_chunk_boundaries(f, num_processes, b"<|endoftext|>")
-
+    count_dict = multiprocessing.Manager().dict()
+    lk = multiprocessing.Lock()
     # The following is a serial implementation, but you can parallelize this
     # by sending each start/end pair to a set of processes.
+    processes: list[multiprocessing.Process] = []
     for start, end in zip(boundaries[:-1], boundaries[1:]):
-        f.seek(start)
-        chunk = f.read(end - start).decode("utf-8", errors="ignore")
-        # Run pre-tokenization on your chunk and store the counts for each pre-token
+        p = multiprocessing.Process(target=read_file, args=(filename, start, end, count_dict, lk))
+        p.start()
+        processes.append(p)
+        # start subprocesses with their respective boundaries
+        # subprocesses returns their counts
+        # total the counts
+        # find the most common pair
+        #     create a new token for the pair
+        #     send the pair to the subprocesses
+        #     continue loop until max vocab length reached
+    for p in processes:
+        p.join()
+    
+    
+    PAT = "|".join(re.escape(t) for t in sorted(SPECIAL_TOKENS, key=len, reverse=True)) + r"""|'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+    f.seek(0)
+    text = f.read().decode("utf-8", errors="ignore")
+    counts = {}
+    for t in re.finditer(PAT, text):
+            byte_val = t.group().encode("utf-8")
+            if byte_val not in counts:
+                counts[byte_val] = 0
+            counts[byte_val] += 1
+    differents = []
+    for key in counts:
+        if counts[key] != count_dict[key]:
+            print(key, counts[key], count_dict[key])
+        assert counts[key] == count_dict[key]
+    print("passed")
+    print(sys.getsizeof(counts))
