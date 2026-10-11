@@ -1,15 +1,27 @@
 import os
 from typing import BinaryIO
-import multiprocessing as mp
-from multiprocessing import Process, Queue, Pool
+from multiprocessing import Pool
 import regex as re
 import sys
 import time
-import gc
+import heapq
 
 SPECIAL_TOKENS = ["<|endoftext|>"]
 
 
+class MaxItem():
+    def __init__(self, i):
+        self.i = i
+    
+    def __lt__(self, other):
+        return self.i > other.i
+
+    def __repr__(self):
+        return self.i
+
+    def item(self):
+        return self.i
+    
 def find_chunk_boundaries(
     file: BinaryIO,
     desired_num_chunks: int,
@@ -84,7 +96,7 @@ def train_bpe(input_path: str | os.PathLike, vocab_size: int, special_tokens: li
         vocab[len(vocab)] = st.encode("utf-8")
     merges = []
     
-    num_processes = 14
+    num_processes = 50
     
     with open(input_path, "rb") as f:
         boundaries = find_chunk_boundaries(f, num_processes, b"<|endoftext|>")
@@ -118,29 +130,38 @@ def train_bpe(input_path: str | os.PathLike, vocab_size: int, special_tokens: li
                 pairToWords[pair] = set()
             pairCounts[pair] += counts[word]
             pairToWords[pair].add(word)
+    
+    pairHeap = []    
+    for pair in pairCounts:
+        heapq.heappush(pairHeap, (-pairCounts[pair], MaxItem(pair)))
                 
     start_time = time.perf_counter()
     while len(vocab) < vocab_size:
-        mostCommonPairs = []
-        for pair in pairCounts:
-            if len(mostCommonPairs) == 0 or \
-                pairCounts[pair] == pairCounts[mostCommonPairs[0]]:
-                mostCommonPairs.append(pair)
-            elif pairCounts[pair] > pairCounts[mostCommonPairs[0]]:
-                mostCommonPairs = [pair]
-        if once:
-            once = False
-            print("most common pairs: ", mostCommonPairs)
-            print(f"in freq: {pairCounts[mostCommonPairs[0]]}, ' t' freq: {pairCounts[tuple(i.to_bytes() for i in " t".encode("utf-8"))]}")
-        if tuple(int(10).to_bytes() for _ in range(2)) in mostCommonPairs:
-            print("most common: ", mostCommonPairs)
-        pair = max(mostCommonPairs)
+        
+        # if once:
+        #     once = False
+        #     print("most common pairs: ", mostCommonPairs)
+        #     print(f"in freq: {pairCounts[mostCommonPairs[0]]}, ' t' freq: {pairCounts[tuple(i.to_bytes() for i in " t".encode("utf-8"))]}")
+        # if tuple(int(10).to_bytes() for _ in range(2)) in mostCommonPairs:
+            # print("most common: ", mostCommonPairs)
+        pair = None
+        while True:
+            count, pair = heapq.heappop(pairHeap)
+            count = -count
+            pair = pair.item()
+            if pair not in pairCounts:
+                continue
+            if count == pairCounts[pair]:
+                break
+            heapq.heappush(pairHeap, (-pairCounts[pair], MaxItem(pair)))
         if pair[0]  == b' g' and pair[1] == b'ive':
             print("specials: ", special_tokens)
         if pairCounts[pair] == 1:
             break
         for word in pairToWords[pair]:
             i = 1
+            total_counts = 0
+            newPairCounts = {}
             curWord = None
             while i < len(word):
                 # print("doing word ", word)
@@ -149,7 +170,6 @@ def train_bpe(input_path: str | os.PathLike, vocab_size: int, special_tokens: li
                     continue
                 if word not in counts:
                     print(f"{word} not in counts for pair: {pair}, all words: {pairToWords[pair]}")
-                                    
                 newWord = word[:i-1]+tuple([pair[0]+pair[1]])+word[i+1:]
                 for j in range(1, len(word)):
                     if (word[j-1], word[j]) == pair:
@@ -159,6 +179,7 @@ def train_bpe(input_path: str | os.PathLike, vocab_size: int, special_tokens: li
                     pairToWords[(word[j-1], word[j])].discard(word)
                     pairCounts[(word[j-1], word[j])] -= counts[word]
                 counts[newWord] = counts[word]
+                
                 for j in range(1, len(newWord)):
                     curPair = (newWord[j-1], newWord[j])
                     if curPair == pair:
@@ -167,9 +188,11 @@ def train_bpe(input_path: str | os.PathLike, vocab_size: int, special_tokens: li
                         pairCounts[curPair] = 0
                         pairToWords[curPair] = set()
                     pairCounts[curPair] += counts[newWord]
+                    heapq.heappush(pairHeap, (-pairCounts[curPair], MaxItem(curPair)))
                     pairToWords[curPair].add(newWord)
                 word = newWord
                 i += 1
+    
         del pairCounts[pair]
         del pairToWords[pair]
         vocab[len(vocab)] = pair[0] + pair[1]
