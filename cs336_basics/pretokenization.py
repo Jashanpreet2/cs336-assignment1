@@ -103,37 +103,8 @@ def train_bpe(input_path: str | os.PathLike, vocab_size: int, special_tokens: li
                 if k not in counts:
                     counts[k] = 0
                 counts[k] += process_count[k]
-        # start subprocesses with their respective boundaries
-        # subprocesses returns their counts
-        # total the counts
-        # find the most common pair
-        #     create a new token for the pair
-        #     send the pair to the subprocesses
-        #     continue loop until max vocab length reached
+
     print("time to read by multiprocessing: ", time.perf_counter() - start_time)
-        # PAT = r"""|'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
-        # PAT = "(?:" + "|".join(re.escape(t) for t in sorted(special_tokens, key=len, reverse=True)) + r""")(*SKIP)(*FAIL)|'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
-        # start_time = time.perf_counter()
-        # f.seek(0)
-        # counts = {}
-        # text = f.read().decode("utf-8", errors="ignore")
-        # print("splitting at ", '|'.join(re.escape(st) for st in special_tokens))
-        # for chunk in re.split('|'.join(re.escape(st) for st in special_tokens), text):
-        #     for word in re.finditer(PAT, chunk):
-        #         if word.group() in special_tokens:
-        #             continue
-        #         word = tuple(i.to_bytes() for i in word.group().encode("utf-8"))
-        #         if word not in counts:
-        #             counts[word] = 0
-        #         counts[word] += 1
-        # print("linear time: ", time.perf_counter() - start_time)
-        # differents = []
-        # for key in counts:
-        #     if counts[key] != count_dict[key]:
-        #         print(key, counts[key], count_dict[key])
-        #     assert counts[key] == count_dict[key]
-        # print("passed")
-        # counts = dict(count_dict)
     print(f"{sys.getsizeof(counts)}")
     
     pairCounts = {}
@@ -204,5 +175,6 @@ def train_bpe(input_path: str | os.PathLike, vocab_size: int, special_tokens: li
         vocab[len(vocab)] = pair[0] + pair[1]
         merges.append(pair)
         # print("merge time: ", time.perf_counter()-start_time, " curren vocab len: ", len(vocab), "max vocab len: ", vocab_size)
+    print("Time to tokenize: ", time.perf_counter() - start_time)
     return vocab, merges
                 
