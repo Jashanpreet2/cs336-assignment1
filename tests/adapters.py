@@ -8,6 +8,7 @@ import numpy.typing as npt
 import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
+import cs336_basics
 
 
 def run_linear(
@@ -28,8 +29,9 @@ def run_linear(
     Returns:
         Float[Tensor, "... d_out"]: The transformed output of your linear module.
     """
-
-    raise NotImplementedError
+    linear = cs336_basics.Linear(d_in, d_out)
+    linear.load_state_dict({"W": weights})
+    return linear.forward(in_features)
 
 
 def run_embedding(
@@ -559,7 +561,7 @@ def get_tokenizer(
     Returns:
         A BPE tokenizer that uses the provided vocab, merges, and special tokens.
     """
-    raise NotImplementedError
+    return cs336_basics.Tokenizer(vocab, merges, special_tokens)
 
 
 def run_train_bpe(
@@ -589,4 +591,4 @@ def run_train_bpe(
                 representing that <token1> was merged with <token2>.
                 Merges are ordered by order of creation.
     """
-    raise NotImplementedError
+    return cs336_basics.train_bpe(input_path, vocab_size, special_tokens)
