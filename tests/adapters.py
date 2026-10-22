@@ -5,10 +5,12 @@ from collections.abc import Iterable
 from typing import IO, Any, BinaryIO
 
 import numpy.typing as npt
+import math
 import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
 import cs336_basics
+from einops import rearrange
 
 
 def run_linear(
@@ -52,8 +54,9 @@ def run_embedding(
     Returns:
         Float[Tensor, "... d_model"]: Batch of embeddings returned by your Embedding layer.
     """
-
-    raise NotImplementedError
+    embedding = cs336_basics.Embedding(vocab_size, d_model)
+    embedding.load_state_dict({"W": weights})
+    return embedding.forward(token_ids)
 
 
 def run_swiglu(
@@ -82,10 +85,12 @@ def run_swiglu(
     # If your state dict keys match, you can use `load_state_dict()`
     # swiglu.load_state_dict(weights)
     # You can also manually assign the weights
+    swiglu = cs336_basics.FeedForward(in_features.shape[-1])
+    swiglu.load_state_dict({"W1": w1_weight, "W2": w2_weight, "W3": w3_weight})
     # swiglu.w1.weight.data = w1_weight
     # swiglu.w2.weight.data = w2_weight
     # swiglu.w3.weight.data = w3_weight
-    raise NotImplementedError
+    return swiglu(in_features)
 
 
 def run_scaled_dot_product_attention(
@@ -106,7 +111,7 @@ def run_scaled_dot_product_attention(
     Returns:
         Float[Tensor, " ... queries d_v"]: Output of SDPA
     """
-    raise NotImplementedError
+    return cs336_basics.scaled_dot_product_attention(Q, K, V, mask)
 
 
 def run_multihead_self_attention(
@@ -140,7 +145,13 @@ def run_multihead_self_attention(
         Float[Tensor, " ... sequence_length d_model"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    raise NotImplementedError
+    d_k = d_v = d_model//num_heads
+    mhsa = cs336_basics.MultiHeadSelfAttention(num_heads, d_model, d_k, d_v)
+    q_proj_weight = rearrange(q_proj_weight, "(heads d_k) d_model -> heads d_k d_model", heads=num_heads)
+    k_proj_weight = rearrange(k_proj_weight, "(heads d_k) d_model -> heads d_k d_model", heads=num_heads)
+    v_proj_weight = rearrange(v_proj_weight, "(heads d_v) d_model -> heads d_v d_model", heads=num_heads)
+    mhsa.load_state_dict({"Wq": q_proj_weight, "Wk": k_proj_weight, "Wv": v_proj_weight, "Wo": o_proj_weight })
+    return mhsa(in_features)
 
 
 def run_multihead_self_attention_with_rope(
@@ -380,7 +391,9 @@ def run_rmsnorm(
         Float[Tensor,"... d_model"]: Tensor of with the same shape as `in_features` with the output of running
         RMSNorm of the `in_features`.
     """
-    raise NotImplementedError
+    rmsNorm = cs336_basics.RMSnorm(d_model, eps)
+    rmsNorm.load_state_dict({"gain": weights})
+    return rmsNorm(in_features)
 
 
 def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
@@ -395,6 +408,7 @@ def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
         SiLU to each element.
     """
     raise NotImplementedError
+
 
 
 def run_get_batch(
@@ -433,7 +447,7 @@ def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, "
         Float[Tensor, "..."]: Tensor of with the same shape as `in_features` with the output of
         softmax normalizing the specified `dim`.
     """
-    raise NotImplementedError
+    return cs336_basics.softmax(in_features, dim)
 
 
 def run_cross_entropy(
